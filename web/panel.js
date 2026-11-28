@@ -117,6 +117,7 @@ function showUsage(payload) {
   const cached = Number(payload.cached_tokens);
   if (!Number.isFinite(prompt)) {
     PU.lastTurnPrompt = null;
+    PU.lastTurnCached = null;
     PU.lastTurnLine = "";
     renderStatusBar();
     renderContextBar();
@@ -128,6 +129,7 @@ function showUsage(payload) {
       tokenLine(prompt, cached) +
       (Number.isFinite(completion) ? `  ·  +${completion.toLocaleString()}` : "");
   PU.lastTurnPrompt = prompt;
+  PU.lastTurnCached = Number.isFinite(cached) ? cached : null;
   renderStatusBar();
   renderContextBar();
 }
@@ -191,6 +193,21 @@ function renderUsageTitle() {
   } else {
     lines.push("this model reports no window to measure it against");
   }
+  // What the prompt actually cost. A provider that answers the unchanged prefix from its cache
+  // bills that share at a fraction of the full rate, so the number this turn was charged is
+  // closer to the uncached part than to `prompt`. Stated only where the gateway reported a
+  // cache: a zero here means "nothing was cached", which is a fact, and silence means the
+  // gateway said nothing, which is a different fact.
+  const cached = PU.lastTurnCached;
+  if (Number.isFinite(cached) && prompt > 0) {
+    const share = Math.min(cached / prompt, 1);
+    lines.push(
+        `${cached.toLocaleString()} came from the cache, so about ` +
+        `${Math.round((1 - share) * 100)}% of this prompt was billed at the full rate`);
+  }
+  // The total is the conversation's rather than this turn's, so it starts after a blank line:
+  // a tooltip is read as one column, and a section that breaks the column is what the line is
+  // for. Without it the cached share above reads as part of the session's history.
   const total = PU.usageTotal;
   if (total) {
     const sum = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);

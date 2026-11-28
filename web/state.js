@@ -84,6 +84,11 @@ const PU = {
   // That same turn as the console stated it -- count, cached share, completion -- so the tooltip
   // repeats it rather than recomputing it.
   lastTurnLine: "",
+  // The share of that prompt the provider answered from its cache. Kept beside the count rather
+  // than folded into the line, because the line is a sentence and this is a number the tooltip
+  // does arithmetic on: a prompt 90% cached costs a tenth of what an uncached one does, and that
+  // is the only figure on this bar that says what a change to the prompt actually saved.
+  lastTurnCached: null,
   usageTotal: null,
 
   composer: {
