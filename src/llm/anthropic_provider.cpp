@@ -56,6 +56,16 @@ boost::json::value ProjectMessage(const ChatMessage& message) {
   }
 
   boost::json::array blocks;
+  // The thinking first, before the text and the calls, which is the order this API states a
+  // block list in and the order the reply carried. It was dropped entirely: the OpenAI and
+  // Ollama paths re-send theirs, this one built its own block list and had no branch for it, so
+  // a turn that thought and then called a tool reached the next round without the reasoning
+  // that produced the call. The signature travels with the text because this API verifies it.
+  for (const ReasoningBlock& block : message.reasoning) {
+    if (block.text.empty()) continue;
+    blocks.push_back(boost::json::value{
+        {"type", "thinking"}, {"thinking", block.text}, {"signature", block.signature}});
+  }
   if (!message.content.empty()) {
     blocks.push_back(boost::json::value{{"type", "text"}, {"text", message.content}});
   }
