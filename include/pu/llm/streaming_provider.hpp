@@ -57,6 +57,8 @@ class StreamingProvider : public LLMProvider {
   void SetRetryPolicy(core::RetryPolicy policy) { retry_ = policy; }
   const core::RetryPolicy& RetryPolicyForTurn() const { return retry_; }
 
+
+
   void AppendContent(std::string_view text, const ChatRequest& request);
   void AppendReasoning(std::string_view text, const ChatRequest& request, std::string signature = {},
                        boost::json::value raw = nullptr);

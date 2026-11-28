@@ -26,6 +26,7 @@
 #include "pu/core/base.hpp"
 #include "pu/core/json.hpp"
 #include "pu/core/tool_types.hpp"
+#include "pu/llm/content.hpp"
 
 namespace pu {
 
@@ -90,11 +91,21 @@ struct ChatMessage {
   int id = 0;
   std::string timestamp = "";
   std::string role;
-  std::string content = "";
+  // What this message says, and what it carries. A turn is not a string: a prompt may be a
+  // paragraph and a screenshot at once, and the provider that carries it out decides how the two
+  // go on the wire. Callers that only write text use `Text()`, so the common case reads as it did.
+  std::vector<ContentBlock> content = {};
   std::string tool_name = "";
   boost::json::value tool_calls = nullptr;
   std::vector<ReasoningBlock> reasoning = {};
   std::string tool_call_id = "";
+
+  // The words, with attachments left out. A reader that shows a log line, compares two messages
+  // or writes one into a note wants this rather than the block list.
+  std::string Text() const { return JoinedText(content); }
+  // Sets the words and leaves any attachment beside them. A message built by code that has only
+  // text is this one call.
+  void SetText(std::string text) { content = TextContent(std::move(text)); }
 
   bool HasToolCalls() const {
     const boost::json::array* calls = tool_calls.if_array();

@@ -73,11 +73,11 @@ TEST_CASE("The system inputs come before the stored turns", "[request]") {
 
   REQUIRE(messages.size() == 3);
   REQUIRE(messages[0].role == "system");
-  REQUIRE(messages[0].content == "be brief\n\n=== Environment ===");
+  REQUIRE(messages[0].Text() == "be brief\n\n=== Environment ===");
   REQUIRE(messages[1].role == "user");
-  REQUIRE(messages[1].content == "hello");
+  REQUIRE(messages[1].Text() == "hello");
   REQUIRE(messages[2].role == "assistant");
-  REQUIRE(messages[2].content == "hi");
+  REQUIRE(messages[2].Text() == "hi");
 }
 
 TEST_CASE("Each system input is optional", "[request]") {
@@ -88,13 +88,13 @@ TEST_CASE("Each system input is optional", "[request]") {
   prompt_only.system_prompt = "be brief";
   auto messages = session::BuildRequestPath(graph, prompt_only);
   REQUIRE(messages.size() == 2);
-  REQUIRE(messages[0].content == "be brief");
+  REQUIRE(messages[0].Text() == "be brief");
 
   session::RequestInputs environment_only;
   environment_only.environment = "=== Environment ===";
   messages = session::BuildRequestPath(graph, environment_only);
   REQUIRE(messages.size() == 2);
-  REQUIRE(messages[0].content == "=== Environment ===");
+  REQUIRE(messages[0].Text() == "=== Environment ===");
 
   messages = session::BuildRequestPath(graph, session::RequestInputs{});
   REQUIRE(messages.size() == 1);
@@ -111,7 +111,7 @@ TEST_CASE("An empty conversation still carries its system inputs", "[request]") 
 
   REQUIRE(messages.size() == 1);
   REQUIRE(messages[0].role == "system");
-  REQUIRE(messages[0].content == "be brief");
+  REQUIRE(messages[0].Text() == "be brief");
 }
 
 TEST_CASE("A stored system node is passed through", "[request]") {
@@ -128,9 +128,9 @@ TEST_CASE("A stored system node is passed through", "[request]") {
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, inputs);
 
   REQUIRE(messages.size() == 3);
-  REQUIRE(messages[0].content == "be brief");
-  REQUIRE(messages[1].content == "one");
-  REQUIRE(messages[2].content == "a note from the caller");
+  REQUIRE(messages[0].Text() == "be brief");
+  REQUIRE(messages[1].Text() == "one");
+  REQUIRE(messages[2].Text() == "a note from the caller");
 }
 
 TEST_CASE("Tool calls and receipts survive the request view", "[request]") {
@@ -253,14 +253,14 @@ TEST_CASE("A page of an older run of one command is replaced by a receipt", "[re
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
   REQUIRE(messages.size() == 2);
 
-  const boost::json::value older = boost::json::parse(messages[0].content);
+  const boost::json::value older = boost::json::parse(messages[0].Text());
   REQUIRE(boost::json::value_to<std::string>(older.at("output")).empty());
   REQUIRE(boost::json::value_to<std::string>(older.at("superseded_by")) == "o2");
   // The counts survive, so the model still knows how much it is not seeing.
   REQUIRE(older.at("stored").at("printed") == 3);
   REQUIRE(older.at("lines").at("first") == 1);
 
-  REQUIRE(messages[1].content.find("line 1 of run two") != std::string::npos);
+  REQUIRE(messages[1].Text().find("line 1 of run two") != std::string::npos);
 }
 
 TEST_CASE("Two pages of one run are both kept", "[request]") {
@@ -272,8 +272,8 @@ TEST_CASE("Two pages of one run are both kept", "[request]") {
   REQUIRE(messages.size() == 2);
   // Complementary, not successive: dropping the first would take away what the model
   // read on the way to the second.
-  REQUIRE(messages[0].content.find("first page") != std::string::npos);
-  REQUIRE(messages[1].content.find("second page") != std::string::npos);
+  REQUIRE(messages[0].Text().find("first page") != std::string::npos);
+  REQUIRE(messages[1].Text().find("second page") != std::string::npos);
 }
 
 TEST_CASE("Pages of different commands do not replace each other", "[request]") {
@@ -282,8 +282,8 @@ TEST_CASE("Pages of different commands do not replace each other", "[request]") 
   AppendPage(graph, "s2", "o2", "from cat\n", 2);
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
-  REQUIRE(messages[0].content.find("from ls") != std::string::npos);
-  REQUIRE(messages[1].content.find("from cat") != std::string::npos);
+  REQUIRE(messages[0].Text().find("from ls") != std::string::npos);
+  REQUIRE(messages[1].Text().find("from cat") != std::string::npos);
 }
 
 TEST_CASE("A tool result that is no page is left alone", "[request]") {
@@ -296,9 +296,9 @@ TEST_CASE("A tool result that is no page is left alone", "[request]") {
   AppendPage(graph, "s1", "o1", "from ls\n", 1);
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
-  REQUIRE(messages[0].content.find("\"success\":true") != std::string::npos);
-  REQUIRE(messages[0].content.find("superseded_by") == std::string::npos);
-  REQUIRE(messages[1].content.find("from ls") != std::string::npos);
+  REQUIRE(messages[0].Text().find("\"success\":true") != std::string::npos);
+  REQUIRE(messages[0].Text().find("superseded_by") == std::string::npos);
+  REQUIRE(messages[1].Text().find("from ls") != std::string::npos);
 }
 
 TEST_CASE("A page read after a newer run is not replaced", "[request]") {
@@ -311,9 +311,9 @@ TEST_CASE("A page read after a newer run is not replaced", "[request]") {
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
   REQUIRE(messages.size() == 3);
-  REQUIRE(messages[0].content.find("superseded_by") != std::string::npos);
-  REQUIRE(messages[1].content.find("run two") != std::string::npos);
-  REQUIRE(messages[2].content.find("run one, page two") != std::string::npos);
+  REQUIRE(messages[0].Text().find("superseded_by") != std::string::npos);
+  REQUIRE(messages[1].Text().find("run two") != std::string::npos);
+  REQUIRE(messages[2].Text().find("run one, page two") != std::string::npos);
 }
 
 TEST_CASE("A tombstone keeps the verdict and drops the way to ask for more", "[request]") {
@@ -426,7 +426,7 @@ TEST_CASE("A request with no supersession is the transcript itself", "[request]"
   // Every node, and no system message because this call gave no prompt or environment.
   REQUIRE(messages.size() == graph.Size());
   for (const ChatMessage& msg : messages) {
-    REQUIRE(msg.content.find("tombstone") == std::string::npos);
+    REQUIRE(msg.Text().find("tombstone") == std::string::npos);
   }
 }
 
@@ -446,7 +446,7 @@ TEST_CASE("Only the newest six superseded results keep a cursor", "[request]") {
   int superseded = 0;
   int tombstones = 0;
   for (std::size_t i : tool_at) {
-    const std::string& content = messages[i].content;
+    const std::string content = messages[i].Text();
     const bool tombstone = content.find("\"elided\":\"tombstone\"") != std::string::npos;
     const bool superseded_receipt = content.find("\"superseded_by\"") != std::string::npos;
     if (tombstone) ++tombstones;
@@ -460,7 +460,7 @@ TEST_CASE("Only the newest six superseded results keep a cursor", "[request]") {
   REQUIRE(tombstones == 5);
 
   // The newest run was never superseded and is still whole.
-  REQUIRE(messages[tool_at.back()].content.find("line 40 of the output") != std::string::npos);
+  REQUIRE(messages[tool_at.back()].Text().find("line 40 of the output") != std::string::npos);
 }
 
 TEST_CASE("A tombstone keeps the verdict and drops the cursor", "[request]") {
@@ -476,7 +476,7 @@ TEST_CASE("A tombstone keeps the verdict and drops the cursor", "[request]") {
   const std::vector<std::size_t> tool_at = ToolPositions(messages);
   REQUIRE(tool_at.size() == 12);
 
-  const boost::json::object tombstone = boost::json::parse(messages[tool_at.front()].content).as_object();
+  const boost::json::object tombstone = boost::json::parse(messages[tool_at.front()].Text()).as_object();
   REQUIRE(tombstone.contains("elided"));
   REQUIRE(boost::json::value_to<std::string>(tombstone.at("elided")) == "tombstone");
   // No cursor, and no page scope to page into.
@@ -487,7 +487,7 @@ TEST_CASE("A tombstone keeps the verdict and drops the cursor", "[request]") {
   REQUIRE(tombstone.at("buffer").as_object().contains("source"));
 
   // The newest run is whole, so the body it holds is readable.
-  const boost::json::object newest = boost::json::parse(messages[tool_at.back()].content).as_object();
+  const boost::json::object newest = boost::json::parse(messages[tool_at.back()].Text()).as_object();
   REQUIRE_FALSE(newest.contains("elided"));
   REQUIRE(boost::json::value_to<std::string>(newest.at("output"))
               .find("line 40 of the output") != std::string::npos);
@@ -500,7 +500,7 @@ TEST_CASE("A registry of six or fewer superseded results keeps every cursor", "[
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
   for (std::size_t i : ToolPositions(messages)) {
-    REQUIRE(messages[i].content.find("tombstone") == std::string::npos);
+    REQUIRE(messages[i].Text().find("tombstone") == std::string::npos);
   }
 }
 
@@ -512,8 +512,8 @@ TEST_CASE("A result that was never superseded is never tombstoned", "[request]")
 
   const std::vector<ChatMessage> messages = session::BuildRequestPath(graph, {});
   for (std::size_t i : ToolPositions(messages)) {
-    REQUIRE(messages[i].content.find("tombstone") == std::string::npos);
-    REQUIRE(messages[i].content.find("superseded_by") == std::string::npos);
+    REQUIRE(messages[i].Text().find("tombstone") == std::string::npos);
+    REQUIRE(messages[i].Text().find("superseded_by") == std::string::npos);
   }
 }
 
@@ -568,12 +568,12 @@ TEST_CASE("A second answer to one question replaces the first", "[request]") {
   const std::vector<std::size_t> tool_at = ToolPositions(messages);
   REQUIRE(tool_at.size() == 2);
 
-  const boost::json::value older = boost::json::parse(messages[tool_at[0]].content);
+  const boost::json::value older = boost::json::parse(messages[tool_at[0]].Text());
   REQUIRE(boost::json::value_to<std::string>(older.at("output")).empty());
   REQUIRE(boost::json::value_to<std::string>(older.at("superseded_by")) == "a2");
 
   // The newer answer is the one the model reads in full.
-  REQUIRE(messages[tool_at[1]].content.find("the second answer") != std::string::npos);
+  REQUIRE(messages[tool_at[1]].Text().find("the second answer") != std::string::npos);
 }
 
 TEST_CASE("Answers to two different questions do not replace each other", "[request]") {
@@ -585,8 +585,8 @@ TEST_CASE("Answers to two different questions do not replace each other", "[requ
 
   const std::vector<std::size_t> tool_at = ToolPositions(messages);
   REQUIRE(tool_at.size() == 2);
-  REQUIRE(messages[tool_at[0]].content.find("answer about pricing") != std::string::npos);
-  REQUIRE(messages[tool_at[1]].content.find("answer about latency") != std::string::npos);
+  REQUIRE(messages[tool_at[0]].Text().find("answer about pricing") != std::string::npos);
+  REQUIRE(messages[tool_at[1]].Text().find("answer about latency") != std::string::npos);
 }
 
 TEST_CASE("A superseded page is compressed but a conclusion never is", "[request]") {
@@ -607,12 +607,12 @@ TEST_CASE("A superseded page is compressed but a conclusion never is", "[request
 
   int tombstones = 0;
   for (const ChatMessage& msg : messages) {
-    if (msg.role == "tool" && msg.content.find("\"elided\":\"tombstone\"") != std::string::npos) {
+    if (msg.role == "tool" && msg.Text().find("\"elided\":\"tombstone\"") != std::string::npos) {
       ++tombstones;
     }
     // Nothing that is an answer was compressed: it still holds the text it answered with.
-    if (msg.role == "tool" && msg.content.find("the conclusion this turn is about") != std::string::npos) {
-      REQUIRE(msg.content.find("tombstone") == std::string::npos);
+    if (msg.role == "tool" && msg.Text().find("the conclusion this turn is about") != std::string::npos) {
+      REQUIRE(msg.Text().find("tombstone") == std::string::npos);
     }
   }
   // The pages that fell past the cursor floor are tombstoned; the answer is never one of them.

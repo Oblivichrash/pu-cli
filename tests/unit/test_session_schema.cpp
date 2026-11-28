@@ -60,7 +60,7 @@ TEST_CASE("A session written by this version loads", "[session][schema]") {
   auto restored = Session::Deserialize(boost::json::parse(boost::json::serialize(saved)));
   REQUIRE(restored != nullptr);
   REQUIRE(restored->Messages().History().size() == 2);
-  REQUIRE(restored->Messages().History()[1].content == "hi");
+  REQUIRE(restored->Messages().History()[1].Text() == "hi");
 }
 
 TEST_CASE("A payload stores content as one string and reasoning as ordered blocks",
@@ -70,7 +70,7 @@ TEST_CASE("A payload stores content as one string and reasoning as ordered block
 
   ChatMessage assistant;
   assistant.role = kAssistantRole;
-  assistant.content = "checking";
+  assistant.SetText("checking");
   assistant.reasoning.push_back(ReasoningBlock{"", {}, boost::json::parse(R"({"raw":true})")});
   assistant.reasoning.push_back(ReasoningBlock{"plain", "sig", nullptr});
   session.Messages().Append(assistant);
@@ -102,7 +102,7 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
 
   ChatMessage assistant;
   assistant.role = "assistant";
-  assistant.content = "checking";
+  assistant.SetText("checking");
   assistant.reasoning.push_back(ReasoningBlock{"because", {}, nullptr});
   assistant.tool_calls =
       boost::json::parse(R"([{"id":"call_1","function":{"name":"ls","arguments":{"path":"."}}}])");
@@ -112,12 +112,12 @@ TEST_CASE("Every role survives a save and load", "[session][schema]") {
   receipt.role = "tool";
   receipt.tool_name = "ls";
   receipt.tool_call_id = "call_1";
-  receipt.content = "file.txt";
+  receipt.SetText("file.txt");
   ws.Append(receipt);
 
   ChatMessage note;
   note.role = "system";
-  note.content = "a note from the caller";
+  note.SetText("a note from the caller");
   ws.Append(note);
 
   auto restored =
@@ -194,9 +194,9 @@ TEST_CASE("The parent survives a save and load", "[session][schema]") {
   REQUIRE(restored != nullptr);
   const std::vector<ChatMessage> history = restored->Messages().History();
   REQUIRE(history.size() == 3);
-  REQUIRE(history[0].content == "one");
-  REQUIRE(history[1].content == "two");
-  REQUIRE(history[2].content == "three");
+  REQUIRE(history[0].Text() == "one");
+  REQUIRE(history[1].Text() == "two");
+  REQUIRE(history[2].Text() == "three");
 }
 
 TEST_CASE("A leaf naming no node is refused", "[session][schema]") {
@@ -293,9 +293,9 @@ TEST_CASE("The view follows the parent links, not the order of the file", "[sess
   REQUIRE(restored != nullptr);
   const std::vector<ChatMessage> history = restored->Messages().History();
   REQUIRE(history.size() == 3);
-  REQUIRE(history[0].content == "one");
-  REQUIRE(history[1].content == "two");
-  REQUIRE(history[2].content == "three");
+  REQUIRE(history[0].Text() == "one");
+  REQUIRE(history[1].Text() == "two");
+  REQUIRE(history[2].Text() == "three");
 }
 
 TEST_CASE("A version that is not a number is refused", "[session][schema]") {

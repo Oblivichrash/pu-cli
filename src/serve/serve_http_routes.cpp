@@ -289,9 +289,24 @@ boost::json::value HandleApiHistory(Call& call, const boost::json::value&) {
     boost::json::value item = {
         {"id", msg.id},
         {"role", msg.role},
-        {"content", msg.content},
+        {"content", msg.Text()},
         {"timestamp", msg.timestamp},
     };
+    // What this message carries, beside the words rather than inside them: the page draws the
+    // text it always drew and attaches the rest, so a reader of the field above is unaffected.
+    for (const ContentBlock& block : msg.content) {
+      if (block.IsText()) continue;
+      boost::json::array& attached =
+          item.as_object().contains("attachments")
+              ? item.as_object()["attachments"].as_array()
+              : (item.as_object()["attachments"] = boost::json::array()).as_array();
+      attached.push_back(boost::json::value{
+          {"kind", BlockKindName(block.kind)},
+          {"media_type", block.media_type},
+          {"name", block.name},
+          {"source", block.source},
+      });
+    }
     if (msg.HasToolCalls()) {
       item.as_object()["tool_calls"] = msg.tool_calls;
 
@@ -310,8 +325,9 @@ boost::json::value HandleApiHistory(Call& call, const boost::json::value&) {
     }
 
     if (msg.role == kToolRole) {
-      const agent_tools::ToolResult parsed = agent_tools::ParseToolResult(msg.content);
-      item.as_object()["output"] = parsed.valid ? parsed.output : msg.content;
+      const std::string text = msg.Text();
+      const agent_tools::ToolResult parsed = agent_tools::ParseToolResult(text);
+      item.as_object()["output"] = parsed.valid ? parsed.output : text;
       item.as_object()["error"] = parsed.error;
       // The same field the live frame carries, so a reloaded turn draws a page as a page.
       if (parsed.valid && !parsed.page.is_null()) item.as_object()["page"] = parsed.page;

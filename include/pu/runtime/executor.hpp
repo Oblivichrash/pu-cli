@@ -156,7 +156,10 @@ class Executor {
     CancelToken command_stop_token = nullptr;
   };
 
-  ExecutionResult Execute(const std::string& input, Conversation& conversation, Turn turn);
+  // `attachments` ride on the message this turn appends rather than following it: a prompt and
+  // the picture it asks about are one turn, and a second message would be a second question.
+  ExecutionResult Execute(const std::string& input, Conversation& conversation, Turn turn,
+                          std::vector<ContentBlock> attachments = {});
 
   std::string BuildStaticSystemContext() const;
   // Folds what tools spent into the turn's own account, so a receipt covers the whole turn.

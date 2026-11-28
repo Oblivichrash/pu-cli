@@ -83,7 +83,7 @@ void TombstoneOldReceipts(std::vector<ChatMessage>& messages) {
   std::vector<std::size_t> superseded_at;
   for (std::size_t i = 0; i < messages.size(); ++i) {
     if (messages[i].role != kToolRole) continue;
-    const std::string_view content = messages[i].content;
+    const std::string content = messages[i].Text();
     if (IsTombstone(content) || !IsSupersededReceipt(content)) continue;
     superseded_at.push_back(i);
   }
@@ -94,11 +94,11 @@ void TombstoneOldReceipts(std::vector<ChatMessage>& messages) {
   const std::size_t tombstone_before = superseded_at.size() - kKeepNewestCursors;
   for (std::size_t k = 0; k < tombstone_before; ++k) {
     ChatMessage& msg = messages[superseded_at[k]];
-    const std::string smaller = paging::TombstonedReceipt(msg.content);
+    const std::string smaller = paging::TombstonedReceipt(msg.Text());
     // A body that does not parse gains nothing from the rewrite, and replacing one opaque
     // string with another only loses the field names a provider might still validate.
-    if (smaller.size() >= msg.content.size()) continue;
-    msg.content = smaller;
+    if (smaller.size() >= msg.Text().size()) continue;
+    msg.SetText(smaller);
   }
 }
 
@@ -111,10 +111,10 @@ ChatMessage RenderMessage(const session::MessageNode& node, int position) {
 
   if (const auto* user = std::get_if<UserPayload>(&node.payload)) {
     msg.role = kUserRole;
-    msg.content = user->content;
+    msg.SetText(user->content);
   } else if (const auto* assistant = std::get_if<AssistantPayload>(&node.payload)) {
     msg.role = kAssistantRole;
-    msg.content = assistant->content;
+    msg.SetText(assistant->content);
     for (const Reasoning& block : assistant->reasoning) {
       msg.reasoning.push_back(ReasoningBlock{block.text, block.signature, block.raw});
     }
@@ -127,11 +127,11 @@ ChatMessage RenderMessage(const session::MessageNode& node, int position) {
     }
   } else if (const auto* system = std::get_if<SystemPayload>(&node.payload)) {
     msg.role = kSystemRole;
-    msg.content = system->content;
+    msg.SetText(system->content);
   } else {
     const ToolPayload& receipt = std::get<ToolPayload>(node.payload);
     msg.role = kToolRole;
-    msg.content = receipt.content;
+    msg.SetText(receipt.content);
     msg.tool_name = receipt.tool_name;
     msg.tool_call_id = receipt.tool_call_id;
   }
@@ -151,7 +151,7 @@ std::vector<ChatMessage> BuildRequestPath(const session::MessageGraph& graph,
   if (!system_text.empty()) {
     ChatMessage system;
     system.role = kSystemRole;
-    system.content = std::move(system_text);
+    system.SetText(std::move(system_text));
     messages.push_back(std::move(system));
   }
 
@@ -165,7 +165,7 @@ std::vector<ChatMessage> BuildRequestPath(const session::MessageGraph& graph,
     ChatMessage msg = RenderMessage(*node, position++);
     const auto replaced = superseded_by.find(node);
     if (replaced != superseded_by.end()) {
-      msg.content = paging::SupersededReceipt(msg.content, replaced->second);
+      msg.SetText(paging::SupersededReceipt(msg.Text(), replaced->second));
     }
     messages.push_back(std::move(msg));
   }

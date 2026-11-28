@@ -45,7 +45,7 @@ std::vector<ModelCheck> VerifyModels(const model::Backend& cfg,
 
   ChatMessage ping;
   ping.role = kUserRole;
-  ping.content = "ping";
+  ping.SetText("ping");
   const std::span<const ChatMessage> history(&ping, 1);
 
   for (const model::ModelEntry& entry : models) {

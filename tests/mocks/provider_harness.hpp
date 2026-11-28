@@ -53,7 +53,12 @@ class ProviderHarness {
 
   // A one-message history, for the tests that send a turn they build themselves.
   static std::vector<ChatMessage> History(std::string user_message = "Hi") {
-    return {{.id = 1, .timestamp = "now", .role = "user", .content = std::move(user_message)}};
+    ChatMessage message;
+    message.id = 1;
+    message.timestamp = "now";
+    message.role = "user";
+    message.SetText(std::move(user_message));
+    return {message};
   }
 
   // The request the provider built, parsed. Read it after a turn has been sent
@@ -62,8 +67,12 @@ class ProviderHarness {
 
   // One user message, one turn, and the reply.
   ChatResult Send(std::string user_message = "Hi") {
-    std::vector<ChatMessage> history = {
-        {.id = 1, .timestamp = "now", .role = "user", .content = std::move(user_message)}};
+    ChatMessage message;
+    message.id = 1;
+    message.timestamp = "now";
+    message.role = "user";
+    message.SetText(std::move(user_message));
+    std::vector<ChatMessage> history = {message};
     return provider_->Chat(ChatRequest(history, {}));
   }
 

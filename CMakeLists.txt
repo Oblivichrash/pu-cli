@@ -71,6 +71,7 @@ add_library(pu::tool_cli ALIAS pu_tool_cli)
 
 add_library(pu_llm STATIC
     src/llm/anthropic_provider.cpp
+    src/llm/content.cpp
     src/llm/field_capture.cpp
     src/llm/gateway_table.cpp
     src/llm/model_check.cpp

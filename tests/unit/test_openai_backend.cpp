@@ -105,7 +105,12 @@ TEST_CASE("OpenAIProvider full streaming callback", "[openai][streaming]") {
     }
   };
 
-  const std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  const std::vector<ChatMessage> history = {message};
 
   std::string accumulated;
   auto result = harness->Chat(ChatRequest(history, {}, [&](std::string_view token) { accumulated += token; }));
@@ -129,7 +134,12 @@ TEST_CASE("OpenAIProvider asks for token usage and reports it", "[openai][usage]
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   auto body = harness.Body();
@@ -152,7 +162,12 @@ TEST_CASE("OpenAIProvider reads the counts it models from a real gateway respons
     cb(const_cast<char*>(chunk.data()), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "pong");
@@ -183,7 +198,12 @@ TEST_CASE("OpenAIProvider names the fields on a captured frame that nothing read
     cb(const_cast<char*>(chunk.data()), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   // The set is asserted whole rather than one name at a time: a gateway that adds a field
@@ -206,7 +226,12 @@ TEST_CASE("OpenAIProvider handles HTTP errors", "[openai][error]") {
     throw pu::HttpError("HTTP error 401: Unauthorized");
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   REQUIRE_THROWS_AS(harness->Chat(ChatRequest(history, {})), pu::HttpError);
 }
 
@@ -225,7 +250,12 @@ TEST_CASE("OpenAIProvider tool calling stream", "[openai][tools]") {
     cb(chunk2.data(), chunk2.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("list");
+  std::vector<ChatMessage> history = {message};
   ToolDefinition tool;
   tool.name = "exec";
   tool.parameters = boost::json::object{};
@@ -245,7 +275,12 @@ TEST_CASE("OpenAIProvider disables thinking with the marker the none level sends
 
   Harness harness(std::move(config));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   harness->Chat(ChatRequest(history, {}));
 
   auto body = harness.Body();
@@ -260,7 +295,12 @@ TEST_CASE("OpenAIProvider sends nothing about thinking for the absent level", "[
 
   Harness harness(std::move(config));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   harness->Chat(ChatRequest(history, {}));
 
   auto body = harness.Body();
@@ -277,7 +317,12 @@ TEST_CASE("OpenAIProvider sends a named level as reasoning_effort", "[openai]") 
 
     Harness harness(std::move(config));
 
-    const std::vector<ChatMessage> history = {{1, "now", "user", "think hard"}};
+    ChatMessage message;
+    message.id = 1;
+    message.timestamp = "now";
+    message.role = "user";
+    message.SetText("think hard");
+    const std::vector<ChatMessage> history = {message};
     harness->Chat(ChatRequest(history, {}));
 
     auto body = harness.Body();
@@ -301,7 +346,12 @@ TEST_CASE("OpenAIProvider reports why the reply stopped", "[openai][streaming]")
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "write a lot"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("write a lot");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "half");
@@ -321,7 +371,12 @@ TEST_CASE("OpenAIProvider raises an error sent inside the stream", "[openai][err
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   try {
     harness->Chat(ChatRequest(history, {}));
     FAIL("an error inside the stream should reach the caller");
@@ -343,7 +398,12 @@ TEST_CASE("OpenAIProvider keeps a refusal as the reply", "[openai][streaming]") 
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "I cannot help with that");
@@ -365,7 +425,12 @@ TEST_CASE("OpenAIProvider keeps a refusal that arrives beside content", "[openai
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "Here is the answer\nI cannot help with that");
@@ -385,7 +450,12 @@ TEST_CASE("OpenAIProvider keeps tool calls from a stream that ends without its s
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("list");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.tool_calls.size() == 1);
@@ -410,7 +480,12 @@ TEST_CASE("OpenAIProvider rejects a tool call the token cap cut short", "[openai
     cb(done.data(), done.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "write"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("write");
+  std::vector<ChatMessage> history = {message};
   REQUIRE_THROWS_AS(harness->Chat(ChatRequest(history, {})), pu::GenericError);
 }
 
@@ -431,7 +506,12 @@ TEST_CASE("OpenAIProvider keeps a tool call whose arguments are not JSON", "[ope
     cb(done.data(), done.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "run"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("run");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.tool_calls.size() == 1);
@@ -452,7 +532,12 @@ TEST_CASE("OpenAIProvider keeps a tool call that arrives without an index", "[op
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "list"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("list");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.tool_calls.size() == 1);
@@ -474,7 +559,12 @@ TEST_CASE("OpenAIProvider reads a frame that carries message instead of delta",
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "the whole answer");
@@ -498,7 +588,12 @@ TEST_CASE("OpenAIProvider reports the model that answered", "[openai][streaming]
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.model == "gpt-4o-mini-2024-07-18");
@@ -522,7 +617,12 @@ TEST_CASE("OpenAIProvider hands reasoning to the caller as it arrives", "[openai
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "think"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("think");
+  std::vector<ChatMessage> history = {message};
   std::string streamed;
   std::string content;
   ChatRequest request(history, {});
@@ -551,7 +651,12 @@ TEST_CASE("OpenAIProvider assembles one payload split over several data lines",
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "split answer");
@@ -570,7 +675,12 @@ TEST_CASE("OpenAIProvider reads a data field with no space", "[openai][streaming
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "bare");
@@ -594,7 +704,12 @@ TEST_CASE("OpenAIProvider ignores the fields that name an event", "[openai][stre
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "ok");
@@ -619,7 +734,12 @@ TEST_CASE("OpenAIProvider reads the counts a cached prompt is billed with", "[op
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.usage.has_value());
@@ -648,7 +768,12 @@ TEST_CASE("OpenAIProvider reads a cached prompt the gateway names at the top lev
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.usage.has_value());
@@ -679,7 +804,12 @@ TEST_CASE("A shape renames the fields the reply is read from", "[openai][usage]"
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "hi");
@@ -712,7 +842,12 @@ TEST_CASE("The default shape reads a captured DeepSeek stream", "[openai][usage]
     cb(const_cast<char*>(chunk.data()), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "pong");
@@ -739,7 +874,12 @@ TEST_CASE("OpenAIProvider reads the reply from one completion only", "[openai][s
     cb(chunk.data(), chunk.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "asked");
@@ -762,7 +902,12 @@ TEST_CASE("[openai] a reply that never carries finish_reason is reported, not as
     cb(const_cast<char*>(frame.data()), frame.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  std::vector<ChatMessage> history = {message};
   const ChatResult result = harness->Chat(ChatRequest(history, {}));
 
   REQUIRE(result.content == "hi");

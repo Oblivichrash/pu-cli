@@ -556,11 +556,11 @@ TEST_CASE("The executor sends the system inputs ahead of the stored turns", "[ex
   REQUIRE(sent.size() == 2);
 
   REQUIRE(sent[0].role == "system");
-  REQUIRE(sent[0].content.find("be brief") == 0);
-  REQUIRE(sent[0].content.find("=== Environment ===") != std::string::npos);
+  REQUIRE(sent[0].Text().find("be brief") == 0);
+  REQUIRE(sent[0].Text().find("=== Environment ===") != std::string::npos);
 
   REQUIRE(sent[1].role == "user");
-  REQUIRE(sent[1].content == "hello");
+  REQUIRE(sent[1].Text() == "hello");
 }
 
 TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
@@ -577,7 +577,7 @@ TEST_CASE("The executor sends no prompt of its own", "[executor][request]") {
 
   const std::vector<ChatMessage>& sent = provider.captured();
   REQUIRE(sent.size() == 2);
-  REQUIRE(sent[0].content.find("=== Environment ===") == 0);
+  REQUIRE(sent[0].Text().find("=== Environment ===") == 0);
 }
 
 TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
@@ -602,7 +602,7 @@ TEST_CASE("A failed request is reported and not stored", "[executor][errors]") {
   const std::vector<ChatMessage> history = ws.History();
   REQUIRE(history.size() == 1);
   REQUIRE(history[0].role == "user");
-  REQUIRE(history[0].content == "hello");
+  REQUIRE(history[0].Text() == "hello");
 
   platform::ShutdownToken()->store(was_set, std::memory_order_release);
 }
@@ -796,7 +796,7 @@ TEST_CASE("A note raised mid-turn lands after every receipt of the round",
   REQUIRE(messages[4].role == "tool");
   REQUIRE(messages[4].tool_call_id == "call_2");
   REQUIRE(messages[5].role == "user");
-  REQUIRE(messages[5].content.find("stopped: wrong file") != std::string::npos);
+  REQUIRE(messages[5].Text().find("stopped: wrong file") != std::string::npos);
 
   // The store keeps the same order, so a saved session cannot carry the split either.
   // The final round's answer is stored after the note, hence six entries.
@@ -807,9 +807,9 @@ TEST_CASE("A note raised mid-turn lands after every receipt of the round",
   REQUIRE(stored[2].role == "tool");
   REQUIRE(stored[3].role == "tool");
   REQUIRE(stored[4].role == "user");
-  REQUIRE(stored[4].content.find("stopped: wrong file") != std::string::npos);
+  REQUIRE(stored[4].Text().find("stopped: wrong file") != std::string::npos);
   REQUIRE(stored[5].role == "assistant");
-  REQUIRE(stored[5].content == "done");
+  REQUIRE(stored[5].Text() == "done");
 }
 
 // A tool that answers the way the sandbox does: the command never ran, and the result says

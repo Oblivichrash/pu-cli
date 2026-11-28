@@ -17,7 +17,7 @@ namespace {
 // naming the call it answers.
 boost::json::value ToolResultBlock(const ChatMessage& message) {
   boost::json::value block = {{"type", "tool_result"}, {"tool_use_id", message.tool_call_id}};
-  if (!message.content.empty()) block.as_object()["content"] = message.content;
+  if (!message.Text().empty()) block.as_object()["content"] = message.Text();
   return block;
 }
 
@@ -66,8 +66,8 @@ boost::json::value ProjectMessage(const ChatMessage& message) {
     blocks.push_back(boost::json::value{
         {"type", "thinking"}, {"thinking", block.text}, {"signature", block.signature}});
   }
-  if (!message.content.empty()) {
-    blocks.push_back(boost::json::value{{"type", "text"}, {"text", message.content}});
+  if (!message.Text().empty()) {
+    blocks.push_back(boost::json::value{{"type", "text"}, {"text", message.Text()}});
   }
   if (message.HasToolCalls()) {
     for (const boost::json::value& call : message.tool_calls.as_array()) {

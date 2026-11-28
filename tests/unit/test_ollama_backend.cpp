@@ -86,8 +86,12 @@ TEST_CASE("OllamaProvider full streaming callback", "[ollama][streaming]") {
   };
 
   std::string accumulated;
-  const std::vector<ChatMessage> history = {
-      ChatMessage{.id = 1, .timestamp = "now", .role = "user", .content = "Hi"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  const std::vector<ChatMessage> history = {message};
   auto result = harness->Chat(ChatRequest(history, {}, [&](std::string_view token) {
     accumulated += token;
   }));
@@ -240,7 +244,12 @@ TEST_CASE("OllamaProvider tool calling stream", "[ollama][tools]") {
     cb(done.data(), done.size());
   };
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "list files"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("list files");
+  std::vector<ChatMessage> history = {message};
   ToolDefinition tool;
   tool.name = "execute_bash";
   tool.parameters = boost::json::object{};
@@ -258,7 +267,7 @@ TEST_CASE("OllamaProvider passes tool_call_id for tool messages", "[ollama][tool
   ChatMessage tool_msg;
   tool_msg.id = 1;
   tool_msg.role = "tool";
-  tool_msg.content = "result";
+  tool_msg.SetText("result");
   tool_msg.tool_name = "execute_bash";
   tool_msg.tool_call_id = "call_42";
   std::vector<ChatMessage> history = {tool_msg};
@@ -426,7 +435,12 @@ TEST_CASE("OllamaProvider hands reasoning to the caller as it arrives", "[ollama
 
   std::string streamed;
   std::string content;
-  const std::vector<ChatMessage> history = {{1, "now", "user", "think"}};
+  ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("think");
+  const std::vector<ChatMessage> history = {message};
   ChatRequest request(history, {});
   request.on_content = [&](std::string_view token) { content += token; };
   request.on_reasoning = [&](std::string_view token) { streamed += token; };

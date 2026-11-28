@@ -239,10 +239,13 @@ bool Executor::AskApproval(const std::string& command, std::string& note) {
 }
 
 ExecutionResult Executor::Execute(const std::string& input, Conversation& conversation,
-                                  Turn turn) {
+                                  Turn turn, std::vector<ContentBlock> attachments) {
   ChatMessage user_turn;
   user_turn.role = kUserRole;
-  user_turn.content = input;
+  user_turn.SetText(input);
+  // The attachments ride on this message rather than following it: a prompt and the picture it
+  // asks about are one turn, and a second message would be a second question.
+  for (ContentBlock& block : attachments) user_turn.content.push_back(std::move(block));
   conversation.Append(user_turn);
 
   // A turn's tally starts at nothing. What a tool spends on its behalf is added here, so a
@@ -311,7 +314,7 @@ void Executor::AppendAssistantTurn(Conversation& conversation, const ChatResult&
 
   ChatMessage assistant_msg;
   assistant_msg.role = kAssistantRole;
-  assistant_msg.content = chat_result.content;
+  assistant_msg.SetText(chat_result.content);
   assistant_msg.reasoning = chat_result.reasoning;
   assistant_msg.tool_calls = std::move(calls);
   conversation.Append(assistant_msg);
@@ -481,7 +484,7 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
 
     ChatMessage tool_msg;
     tool_msg.role = "tool";
-    tool_msg.content = std::move(tool_result);
+    tool_msg.SetText(std::move(tool_result));
     tool_msg.tool_name = call.name;
     tool_msg.tool_call_id = call.id;
     receipts.push_back(std::move(tool_msg));
@@ -498,7 +501,7 @@ void Executor::RunToolCalls(Conversation& conversation, const Turn& turn,
   if (!user_note_.empty() && turn.cancel_token) {
     ChatMessage note_msg;
     note_msg.role = "user";
-    note_msg.content = "[user note during the turn] " + user_note_;
+    note_msg.SetText("[user note during the turn] " + user_note_);
     conversation.Append(note_msg);
     user_note_.clear();
   }

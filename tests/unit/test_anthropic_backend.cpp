@@ -94,10 +94,15 @@ TEST_CASE("AnthropicProvider sends the system prompt as a field, not a message",
   config.system_prompt = "You are terse.";
 
   Harness harness(std::move(config));
-  std::vector<ChatMessage> history = {
-      ChatMessage{.id = 1, .role = "system", .content = "These are the rules."},
-      ChatMessage{.id = 2, .role = "user", .content = "Hello"},
-  };
+  ChatMessage rules;
+  rules.id = 1;
+  rules.role = "system";
+  rules.SetText("These are the rules.");
+  ChatMessage hello;
+  hello.id = 2;
+  hello.role = "user";
+  hello.SetText("Hello");
+  std::vector<ChatMessage> history = {rules, hello};
   harness->Chat(ChatRequest(history, {}));
   const auto body = harness.Body();
 
@@ -112,10 +117,16 @@ TEST_CASE("AnthropicProvider sends the system prompt as a field, not a message",
 TEST_CASE("AnthropicProvider turns a tool message into a tool_result block on a user turn",
           "[anthropic]") {
   Harness harness(RemoteConfig());
-  std::vector<ChatMessage> history = {
-      ChatMessage{.id = 1, .role = "user", .content = "Read the file."},
-      ChatMessage{.id = 2, .role = "tool", .content = "int main() {}", .tool_call_id = "toolu_01"},
-  };
+  ChatMessage read;
+  read.id = 1;
+  read.role = "user";
+  read.SetText("Read the file.");
+  ChatMessage contents;
+  contents.id = 2;
+  contents.role = "tool";
+  contents.SetText("int main() {}");
+  contents.tool_call_id = "toolu_01";
+  std::vector<ChatMessage> history = {read, contents};
   harness->Chat(ChatRequest(history, {}));
   const auto body = harness.Body();
 
@@ -236,9 +247,11 @@ TEST_CASE("AnthropicProvider names stop sequences in its own spelling", "[anthro
 
 TEST_CASE("AnthropicProvider sends tools with input_schema and no type wrapper", "[anthropic]") {
   Harness harness(RemoteConfig());
-  std::vector<ChatMessage> history = {
-      ChatMessage{.id = 1, .role = "user", .content = "Read a file."},
-  };
+  ChatMessage read;
+  read.id = 1;
+  read.role = "user";
+  read.SetText("Read a file.");
+  std::vector<ChatMessage> history = {read};
   std::vector<ToolDefinition> tools = {
       ToolDefinition{"read_file", "Read a file", boost::json::value{{"type", "object"}}},
   };

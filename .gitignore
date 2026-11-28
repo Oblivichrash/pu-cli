@@ -6,3 +6,5 @@ build/
 provider-probes/
 __pycache__/
 .workbuddy/
+*.gguf
+*.safetensors

@@ -31,7 +31,12 @@ pu::OpenAIProvider::Config ConfigWithUsage(pu::model::Billing billing) {
 }
 
 std::vector<pu::ChatMessage> OneQuestion() {
-  return {{.id = 1, .timestamp = "now", .role = "user", .content = "Hi"}};
+  pu::ChatMessage message;
+  message.id = 1;
+  message.timestamp = "now";
+  message.role = "user";
+  message.SetText("Hi");
+  return {message};
 }
 
 }  // namespace

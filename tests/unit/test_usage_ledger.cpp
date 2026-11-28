@@ -73,7 +73,7 @@ TEST_CASE("The conversation does not carry the usage with it", "[session][usage]
   // What the model reads and what a page draws from the chain are unchanged by a cost being
   // known: the ledger sits beside the conversation, not inside it.
   REQUIRE(session.Messages().History().size() == before);
-  REQUIRE(session.Messages().History().back().content == "hi");
+  REQUIRE(session.Messages().History().back().Text() == "hi");
 }
 
 TEST_CASE("A session written before usage was kept still loads", "[session][usage]") {

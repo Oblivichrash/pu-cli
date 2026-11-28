@@ -48,7 +48,12 @@ TEST_CASE("The CodeBuddy header set is the one the gateway is called by", "[code
   auto provider = llm::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(provider != nullptr);
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
+  ChatMessage hello;
+  hello.id = 1;
+  hello.timestamp = "now";
+  hello.role = "user";
+  hello.SetText("Hello");
+  std::vector<ChatMessage> history = {hello};
   provider->Chat(ChatRequest(history, {}));
   const std::vector<std::string>& headers = mock_ptr->last_headers;
 
@@ -84,7 +89,12 @@ TEST_CASE("A codebuddy backend is the OpenAI protocol at the CodeBuddy host", "[
   auto provider = llm::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(provider != nullptr);
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
+  ChatMessage hello;
+  hello.id = 1;
+  hello.timestamp = "now";
+  hello.role = "user";
+  hello.SetText("Hello");
+  std::vector<ChatMessage> history = {hello};
   provider->Chat(ChatRequest(history, {}));
 
   REQUIRE(mock_ptr->last_url ==
@@ -106,7 +116,12 @@ TEST_CASE("A codebuddy provider keeps one conversation across its turns", "[code
   auto provider = llm::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(provider != nullptr);
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
+  ChatMessage hello;
+  hello.id = 1;
+  hello.timestamp = "now";
+  hello.role = "user";
+  hello.SetText("Hello");
+  std::vector<ChatMessage> history = {hello};
   provider->Chat(ChatRequest(history, {}));
   const std::string first_conversation = HeaderValue(mock_ptr->last_headers, "X-Conversation-ID");
   const std::string first_request = HeaderValue(mock_ptr->last_headers, "X-Request-ID");
@@ -132,7 +147,12 @@ TEST_CASE("Two codebuddy providers are two conversations", "[codebuddy]") {
   auto [second_http, second_ptr] = MakeMockHttpClient();
   auto second = llm::CreateBackend(cfg, std::move(second_http));
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
+  ChatMessage hello;
+  hello.id = 1;
+  hello.timestamp = "now";
+  hello.role = "user";
+  hello.SetText("Hello");
+  std::vector<ChatMessage> history = {hello};
   first->Chat(ChatRequest(history, {}));
   second->Chat(ChatRequest(history, {}));
 
@@ -156,7 +176,12 @@ TEST_CASE("A configured host is not overridden", "[codebuddy]") {
   auto provider = llm::CreateBackend(cfg, std::move(mock_http));
   REQUIRE(provider != nullptr);
 
-  std::vector<ChatMessage> history = {{1, "now", "user", "Hello"}};
+  ChatMessage hello;
+  hello.id = 1;
+  hello.timestamp = "now";
+  hello.role = "user";
+  hello.SetText("Hello");
+  std::vector<ChatMessage> history = {hello};
   provider->Chat(ChatRequest(history, {}));
 
   REQUIRE(mock_ptr->last_url == "http://127.0.0.1:9999/v1/chat/completions");

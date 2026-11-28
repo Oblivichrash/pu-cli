@@ -40,11 +40,11 @@ void AppendStoredToolResult(pu::Conversation& conversation, const std::string& c
   receipt.role = pu::kToolRole;
   receipt.tool_call_id = call_id;
   receipt.tool_name = "execute_bash";
-  receipt.content = boost::json::serialize(boost::json::object{{"success", true},
-                                                              {"blocked", false},
-                                                              {"output", "a.txt\n"},
-                                                              {"error", ""},
-                                                              {"exit_code", 0}});
+  receipt.SetText(boost::json::serialize(boost::json::object{{"success", true},
+                                                             {"blocked", false},
+                                                             {"output", "a.txt\n"},
+                                                             {"error", ""},
+                                                             {"exit_code", 0}}));
   conversation.Append(receipt);
 }
 
@@ -68,7 +68,7 @@ TEST_CASE("A turn that ran a tool is three stored nodes, and the page folds it i
   // page folds it into the answer that made the call, so the turn is drawn once.
   const std::vector<pu::ChatMessage> history = conversation.History();
   REQUIRE(history.size() == 3);
-  REQUIRE(history[0].content == "list the files");
+  REQUIRE(history[0].Text() == "list the files");
   REQUIRE(history[1].HasToolCalls());
   REQUIRE(history[2].role == pu::kToolRole);
   REQUIRE(history[2].tool_call_id == kCallId);

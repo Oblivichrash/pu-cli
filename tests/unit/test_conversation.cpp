@@ -45,7 +45,7 @@ TEST_CASE("Session serialization round-trips", "[conversation]") {
   auto restored = Session::Deserialize(reparsed);
   REQUIRE(restored != nullptr);
   REQUIRE(restored->Messages().History().size() == 1);
-  REQUIRE(restored->Messages().History()[0].content == "hello");
+  REQUIRE(restored->Messages().History()[0].Text() == "hello");
   REQUIRE(restored->Spec().agent_name == "chat");
 }
 
@@ -92,7 +92,7 @@ TEST_CASE("A tool result clears the pending tool call", "[conversation]") {
   tool.role = "tool";
   tool.tool_name = "ls";
   tool.tool_call_id = "call_1";
-  tool.content = "done";
+  tool.SetText("done");
   t.Append(tool);
 
   REQUIRE_FALSE(t.HasPendingToolCalls());
@@ -107,12 +107,12 @@ TEST_CASE("Serialization is stable across repeated round trips", "[conversation]
   ChatMessage user;
   user.role = "user";
   user.timestamp = "2026-09-21T10:00:00Z";
-  user.content = "hello";
+  user.SetText("hello");
   t.Append(user);
 
   ChatMessage asst;
   asst.role = "assistant";
-  asst.content = "checking";
+  asst.SetText("checking");
   asst.reasoning.push_back(ReasoningBlock{"because", {}, nullptr});
   asst.tool_calls =
       boost::json::parse(R"([{"id":"call_9","function":{"name":"ls","arguments":{"path":"."}}}])");
@@ -122,7 +122,7 @@ TEST_CASE("Serialization is stable across repeated round trips", "[conversation]
   tool.role = "tool";
   tool.tool_name = "ls";
   tool.tool_call_id = "call_9";
-  tool.content = R"({"success":true})";
+  tool.SetText(R"({"success":true})");
   t.Append(tool);
 
   const std::string first = boost::json::serialize(t.Serialize());
@@ -149,20 +149,20 @@ TEST_CASE("Appending continues from the leaf without dropping anything", "[conve
   for (int i = 1; i <= 20; ++i) {
     ChatMessage msg;
     msg.role = "user";
-    msg.content = "msg" + std::to_string(i);
+    msg.SetText("msg" + std::to_string(i));
     t.Append(msg);
   }
 
   ChatMessage after;
   after.role = "user";
-  after.content = "after";
+  after.SetText("after");
   t.Append(after);
 
   auto h = t.History();
   REQUIRE(h.size() == 21);
-  REQUIRE(h[0].content == "msg1");
-  REQUIRE(h[19].content == "msg20");
-  REQUIRE(h[20].content == "after");
+  REQUIRE(h[0].Text() == "msg1");
+  REQUIRE(h[19].Text() == "msg20");
+  REQUIRE(h[20].Text() == "after");
 }
 
 namespace {
@@ -173,9 +173,9 @@ ChatMessage PageMessage(const char* call_id, const char* buffer, std::size_t ran
   tool.role = "tool";
   tool.tool_name = "execute_bash";
   tool.tool_call_id = call_id;
-  tool.content = std::string(R"({"success":true,"output":"line one\n","buffer":{"id":")") + buffer +
-                 R"(","source":"s3f2a1c4","rank":)" + std::to_string(rank) +
-                 R"(},"page":{"first":1,"last":1},"extent":{"lines":1,"retained":1,"truncated":false}})";
+  tool.SetText(std::string(R"({"success":true,"output":"line one\n","buffer":{"id":")") + buffer +
+               R"(","source":"s3f2a1c4","rank":)" + std::to_string(rank) +
+               R"(},"page":{"first":1,"last":1},"extent":{"lines":1,"retained":1,"truncated":false}})");
   return tool;
 }
 
@@ -217,8 +217,8 @@ TEST_CASE("A page keeps where it came from through a save and a load", "[convers
   // the projection reading a single receipt's text to find out what is a page.
   const std::vector<ChatMessage> messages = session::BuildRequestPath(restored->Graph(), {});
   REQUIRE(messages.size() == 2);
-  REQUIRE(messages[0].content.find("superseded_by") != std::string::npos);
-  REQUIRE(messages[1].content.find("line one") != std::string::npos);
+  REQUIRE(messages[0].Text().find("superseded_by") != std::string::npos);
+  REQUIRE(messages[1].Text().find("line one") != std::string::npos);
 }
 
 TEST_CASE("A tool result that is no page carries no origin", "[conversation]") {
@@ -227,7 +227,7 @@ TEST_CASE("A tool result that is no page carries no origin", "[conversation]") {
   tool.role = "tool";
   tool.tool_name = "write_file";
   tool.tool_call_id = "call_1";
-  tool.content = R"({"success":true,"output":"","error":"","exit_code":0})";
+  tool.SetText(R"({"success":true,"output":"","error":"","exit_code":0})");
   t.Append(tool);
 
   const boost::json::value saved = t.Serialize();

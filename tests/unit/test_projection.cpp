@@ -43,7 +43,7 @@ llm::ProviderCapabilities OllamaLike() {
 ChatMessage Text(const std::string& role, const std::string& content) {
   ChatMessage msg;
   msg.role = role;
-  msg.content = content;
+  msg.SetText(content);
   return msg;
 }
 

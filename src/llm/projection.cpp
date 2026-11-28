@@ -106,13 +106,12 @@ boost::json::value ProjectMessage(const ChatMessage& message,
   const std::string role = ProjectRole(message.role, capabilities.role_naming);
   const bool has_tool_calls = message.HasToolCalls();
   const bool has_reasoning = !message.reasoning.empty();
-
   boost::json::value projected = {{"role", role}};
 
   if (has_tool_calls && !capabilities.allows_content_with_tool_calls) {
     projected.as_object()["content"] = boost::json::value();
   } else {
-    projected.as_object()["content"] = message.content;
+    projected.as_object()["content"] = message.Text();
   }
 
   if (has_reasoning && role == kAssistantRole && capabilities.echoes_reasoning) {

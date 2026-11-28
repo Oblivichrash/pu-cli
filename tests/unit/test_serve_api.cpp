@@ -159,8 +159,8 @@ TEST_CASE("serve API /api/history says how each tool call ended", "[serve][api]"
   receipt.role = "tool";
   receipt.tool_call_id = "call_1";
   receipt.tool_name = "execute_bash";
-  receipt.content = boost::json::serialize(boost::json::object{
-      {"success", true}, {"blocked", false}, {"output", "hi\n"}, {"error", ""}, {"exit_code", 0}});
+  receipt.SetText(boost::json::serialize(boost::json::object{
+      {"success", true}, {"blocked", false}, {"output", "hi\n"}, {"error", ""}, {"exit_code", 0}}));
   conversation.Append(receipt);
 
   auto j = HistoryOf(client);
@@ -226,7 +226,7 @@ TEST_CASE("serve API /api/history keeps a result it cannot parse", "[serve][api]
   receipt.role = "tool";
   receipt.tool_call_id = "call_1";
   receipt.tool_name = "execute_bash";
-  receipt.content = "plain text from a tool";
+  receipt.SetText("plain text from a tool");
   conversation.Append(receipt);
 
   auto j = HistoryOf(client);
@@ -261,12 +261,13 @@ TEST_CASE("serve API /api/history replays a page as a page", "[serve][api]") {
   receipt.role = "tool";
   receipt.tool_call_id = "call_1";
   receipt.tool_name = "execute_bash";
-  receipt.content =
+  const std::string page =
       R"({"success":true,"blocked":false,"output":"one\ntwo","error":"","exit_code":0,)"
       R"("lines":{"first":1,"last":2,"of":3500},)"
       R"("stored":{"printed":3500,"kept":80,"dropped":3420,"printed_bytes":200000,)"
       R"("kept_bytes":5000,"kept_from":"the end"},)"
       R"("buffer":{"id":"b1","source":"cat log","rank":0}})";
+  receipt.SetText(page);
   conversation.Append(receipt);
 
   auto j = HistoryOf(client);

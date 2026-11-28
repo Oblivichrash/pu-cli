@@ -23,7 +23,7 @@ TEST_CASE("A step back is abandoned only when something replaces it", "[session]
 
   ws.Append("user", "three again");
   REQUIRE(ws.History().size() == 3);
-  REQUIRE(ws.History()[2].content == "three again");
+  REQUIRE(ws.History()[2].Text() == "three again");
   REQUIRE(ws.Graph().Size() == 3);
   REQUIRE(ws.Graph().Size() == ws.History().size());
 }
@@ -39,7 +39,7 @@ TEST_CASE("Rewinding before the first turn empties the view, not the store", "[s
 
   ws.Append("user", "restarted");
   REQUIRE(ws.History().size() == 1);
-  REQUIRE(ws.History()[0].content == "restarted");
+  REQUIRE(ws.History()[0].Text() == "restarted");
   REQUIRE(ws.Graph().Size() == 1);
 }
 
@@ -106,7 +106,7 @@ TEST_CASE("Sealing an interrupted turn hands the model a receipt for every call 
   size_t receipts = 0;
   for (const ChatMessage& message : history) {
     if (message.role == kToolRole) {
-      REQUIRE(message.content == session::kCancelledReceipt);
+      REQUIRE(message.Text() == session::kCancelledReceipt);
       ++receipts;
     }
   }
@@ -165,7 +165,7 @@ TEST_CASE("A replaced turn leaves nothing behind across a save and a load", "[se
   REQUIRE(restored != nullptr);
   REQUIRE(restored->Messages().History().size() == 2);
   REQUIRE(restored->Messages().Graph().Size() == 2);
-  REQUIRE(restored->Messages().History()[1].content == "two again");
+  REQUIRE(restored->Messages().History()[1].Text() == "two again");
 }
 
 TEST_CASE("A replaced turn stores what sending the new text from the start would",
@@ -184,6 +184,6 @@ TEST_CASE("A replaced turn stores what sending the new text from the start would
   REQUIRE(edited.History().size() == fresh.History().size());
   for (size_t i = 0; i < fresh.History().size(); ++i) {
     REQUIRE(edited.History()[i].role == fresh.History()[i].role);
-    REQUIRE(edited.History()[i].content == fresh.History()[i].content);
+    REQUIRE(edited.History()[i].Text() == fresh.History()[i].Text());
   }
 }

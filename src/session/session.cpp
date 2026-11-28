@@ -27,7 +27,7 @@ namespace {
 session::MessagePayload ToPayload(const ChatMessage& msg) {
   if (msg.role == kAssistantRole) {
     session::AssistantPayload assistant;
-    assistant.content = msg.content;
+    assistant.content = msg.Text();
     for (const ReasoningBlock& block : msg.reasoning) {
       assistant.reasoning.push_back(
           session::Reasoning{block.text, block.signature, block.raw});
@@ -44,7 +44,7 @@ session::MessagePayload ToPayload(const ChatMessage& msg) {
     session::ToolPayload receipt;
     receipt.tool_call_id = msg.tool_call_id;
     receipt.tool_name = msg.tool_name;
-    receipt.content = msg.content;
+    receipt.content = msg.Text();
     // The one place a result enters the conversation, so the one place worth reading the
     // envelope: what a page came from is a fact about the text, and the text is fixed here.
     receipt.origin = paging::OriginOf(receipt.content);
@@ -53,17 +53,17 @@ session::MessagePayload ToPayload(const ChatMessage& msg) {
 
   if (msg.role == kSystemRole) {
     session::SystemPayload system;
-    system.content = msg.content;
+    system.content = msg.Text();
     return system;
   }
 
   session::UserPayload user;
-  user.content = msg.content;
+  user.content = msg.Text();
   return user;
 }
 
 ChatMessage Normalized(const ChatMessage& msg) {
-  bool valid = text::IsValidUtf8(msg.content) && text::IsValidUtf8(msg.tool_name) &&
+  bool valid = text::IsValidUtf8(msg.Text()) && text::IsValidUtf8(msg.tool_name) &&
                text::IsValidUtf8(msg.tool_call_id);
   for (const ReasoningBlock& block : msg.reasoning) {
     if (!text::IsValidUtf8(block.text)) valid = false;
@@ -71,7 +71,7 @@ ChatMessage Normalized(const ChatMessage& msg) {
   if (valid) return msg;
 
   ChatMessage clean = msg;
-  clean.content = text::SanitizeUtf8(msg.content);
+  clean.SetText(text::SanitizeUtf8(msg.Text()));
   clean.tool_name = text::SanitizeUtf8(msg.tool_name);
   clean.tool_call_id = text::SanitizeUtf8(msg.tool_call_id);
   for (ReasoningBlock& block : clean.reasoning) block.text = text::SanitizeUtf8(block.text);
@@ -96,7 +96,7 @@ void Conversation::Append(const std::string& role, const std::string& content) {
   ChatMessage msg;
   msg.timestamp = CurrentTimestamp();
   msg.role = role;
-  msg.content = content;
+  msg.SetText(content);
   Append(msg);
 }
 
